@@ -1,0 +1,79 @@
+/* General Styles */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #0a53f1;
+    color: #ffffff;
+    margin: 0;
+    padding: 0;
+  }
+  
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 20px;
+  }
+  
+  /* Headings */
+  h2, h4 {
+    color: #ffffff;
+  }
+  
+  h2 {
+    font-size: 2.5rem;
+    font-weight: bold;
+  }
+  
+  h4 {
+    margin-top: 20px;
+    font-size: 1.3rem;
+  }
+  
+  /* Image Styling */
+  .trainer-image {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(30, 71, 255, 0.1);
+    margin-bottom: 20px;
+  }
+  
+  /* List Styling */
+  ul {
+    padding-left: 20px;
+  }
+  
+  ul li {
+    margin-bottom: 10px;
+  }
+  
+  /* Button Styling */
+  .btn {
+    display: inline-block;
+    background-color: #e63946;
+    color: white;
+    padding: 12px 25px;
+    text-decoration: none;
+    font-weight: bold;
+    border-radius: 5px;
+    margin-top: 20px;
+    transition: background-color 0.3s ease;
+  }
+  
+  .btn:hover {
+    background-color: #c4303d;
+  }
+  
+  /* Responsive */
+  @media (max-width: 768px) {
+    .row {
+      flex-direction: column;
+      align-items: center;
+    }
+  
+    .col-md-6 {
+      width: 100%;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+  }
+  
