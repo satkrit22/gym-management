@@ -45,12 +45,6 @@
        </a>
       </li>
       <li class="nav-item">
-       <a class="nav-link"  <?php if(PAGE == 'MyBooking') { echo 'active'; } ?>" href="mybooking.php">
-        <i class="fas fa-exchange-alt"></i>
-        My Booking
-       </a>
-      </li>
-      <li class="nav-item">
        <a class="nav-link"  <?php if(PAGE == 'MyBooking') { echo 'active'; } ?>" href="viewschedule.php">
         <i class="far fa-calendar"></i>
         View Schedule

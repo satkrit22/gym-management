@@ -362,10 +362,18 @@ $filter_class = $_GET['filter_class'] ?? '';
                     </div>
                     <div class="row">
                         <div class="col-md-6">
-                            <div class="form-group">
-                                <label><i class="fas fa-user"></i> Trainer</label>
-                                <input type="text" class="form-control" name="trainer" placeholder="Trainer Name">
-                            </div>
+                            <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="inputTrainer">Select Trainer</label>
+                            <select class="form-control" id="inputTrainer" name="trainer" required>
+                                <option value="">Select</option>
+                                <option>Aashish Thapa </option>
+                                <option>Bikash Thapa</option>
+                                <option>Anupama</option>
+                                <option>Santoshi </option>
+                            </select>
+                        </div>
+                    </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">

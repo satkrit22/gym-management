@@ -12,30 +12,71 @@ if($_SESSION['is_login']){
     exit();
 }
 
+// Get member name for booking
+$memberSql = "SELECT m_name FROM memberlogin_tb WHERE m_email = ?";
+$memberStmt = $conn->prepare($memberSql);
+$memberStmt->bind_param("s", $mEmail);
+$memberStmt->execute();
+$memberResult = $memberStmt->get_result();
+$memberName = $memberResult->fetch_assoc()['m_name'] ?? 'Unknown';
+
 // Handle booking request
 if (isset($_POST['book_class'])) {
     $class_id = $_POST['class_id'];
     $class_title = $_POST['class_title'];
     $class_date = $_POST['class_date'];
     $class_time = $_POST['class_time'];
+    $trainer = $_POST['trainer'] ?? 'TBA';
+    $subscription_months = $_POST['subscription_months'] ?? 1; // Default 1 month
     
-    // Check if already booked
-    $checkSql = "SELECT * FROM tbl_bookings WHERE member_email = ? AND class_id = ?";
+    // Check if already booked in the main booking table
+    $checkSql = "SELECT * FROM submitbookingt_tb WHERE member_email = ? AND booking_type = ? AND member_date = ?";
     $checkStmt = $conn->prepare($checkSql);
-    $checkStmt->bind_param("si", $mEmail, $class_id);
+    $checkStmt->bind_param("sss", $mEmail, $class_title, $class_date);
     $checkStmt->execute();
     $checkResult = $checkStmt->get_result();
     
     if ($checkResult->num_rows > 0) {
         $error_msg = "You have already booked this class!";
     } else {
-        // Insert booking
-        $bookSql = "INSERT INTO tbl_bookings (member_email, class_id, class_title, class_date, class_time, booking_date) VALUES (?, ?, ?, ?, ?, NOW())";
+        // Calculate subscription end date
+        $subscriptionEndDate = new DateTime($class_date);
+        $subscriptionEndDate->add(new DateInterval('P' . $subscription_months . 'M'));
+        
+        // Insert into main booking table (submitbookingt_tb)
+        $bookSql = "INSERT INTO submitbookingt_tb (
+                        member_name, 
+                        member_email, 
+                        member_date, 
+                        booking_type, 
+                        trainer, 
+                        subscription_months, 
+                        subscription_end_date, 
+                        payment_status, 
+                        booking_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())";
+        
         $bookStmt = $conn->prepare($bookSql);
-        $bookStmt->bind_param("sisss", $mEmail, $class_id, $class_title, $class_date, $class_time);
+        $subscriptionEndStr = $subscriptionEndDate->format('Y-m-d');
+        $bookStmt->bind_param("sssssis", 
+            $memberName, 
+            $mEmail, 
+            $class_date, 
+            $class_title, 
+            $trainer, 
+            $subscription_months, 
+            $subscriptionEndStr
+        );
         
         if ($bookStmt->execute()) {
-            $success_msg = "Class booked successfully!";
+            // Also insert into class bookings table for schedule tracking
+            $classSql = "INSERT INTO tbl_bookings (member_email, class_id, class_title, class_date, class_time, booking_date) VALUES (?, ?, ?, ?, ?, NOW())";
+            $classStmt = $conn->prepare($classSql);
+            $classStmt->bind_param("sisss", $mEmail, $class_id, $class_title, $class_date, $class_time);
+            $classStmt->execute();
+            $classStmt->close();
+            
+            $success_msg = "Class booked successfully! You can view it in your booking dashboard.";
         } else {
             $error_msg = "Error booking class. Please try again.";
         }
@@ -172,6 +213,9 @@ $filterClass = isset($_GET['filter_class']) ? $_GET['filter_class'] : '';
     <?php if (isset($success_msg)): ?>
         <div class="alert alert-success alert-dismissible fade show">
             <i class="fas fa-check-circle"></i> <?php echo $success_msg; ?>
+            <a href="memberProfile.php" class="btn btn-sm btn-outline-success ml-2">
+                <i class="fas fa-eye"></i> View My Bookings
+            </a>
             <button type="button" class="close" data-dismiss="alert">&times;</button>
         </div>
     <?php endif; ?>
@@ -192,9 +236,9 @@ $filterClass = isset($_GET['filter_class']) ? $_GET['filter_class'] : '';
                     <p class="mb-0">View and book your favorite gym classes</p>
                 </div>
                 <div class="col-md-4 text-right">
-                    <button class="btn btn-light" onclick="viewTodayClasses()">
-                        <i class="fas fa-calendar-day"></i> Today's Classes
-                    </button>
+                    <a href="memberProfile.php" class="btn btn-light">
+                        <i class="fas fa-bookmark"></i> My Bookings
+                    </a>
                     <button class="btn btn-outline-light ml-2" onclick="refreshCalendar()">
                         <i class="fas fa-sync-alt"></i> Refresh
                     </button>
@@ -269,14 +313,15 @@ $filterClass = isset($_GET['filter_class']) ? $_GET['filter_class'] : '';
 
         <!-- Schedule Cards/Table -->
         <?php
-        // Build SQL query with filters
+        // Build SQL query with filters - check both booking tables
         $sql = "SELECT e.*, 
-                       CASE WHEN b.id IS NOT NULL THEN 1 ELSE 0 END as is_booked
+                       CASE WHEN (b.id IS NOT NULL OR sb.Booking_id IS NOT NULL) THEN 1 ELSE 0 END as is_booked
                 FROM tbl_events e 
                 LEFT JOIN tbl_bookings b ON e.id = b.class_id AND b.member_email = ?
+                LEFT JOIN submitbookingt_tb sb ON e.title = sb.booking_type AND DATE(e.start) = sb.member_date AND sb.member_email = ?
                 WHERE 1=1";
-        $params = array($mEmail);
-        $types = "s";
+        $params = array($mEmail, $mEmail);
+        $types = "ss";
 
         if (!empty($filterDate)) {
             $sql .= " AND DATE(e.start) = ?";
@@ -374,17 +419,19 @@ $filterClass = isset($_GET['filter_class']) ? $_GET['filter_class'] : '';
                     if ($row['is_booked']) {
                         echo '<span class="booked-badge">
                                 <i class="fas fa-check"></i> Already Booked
-                              </span>';
+                              </span>
+                              <a href="memberProfile.php" class="btn btn-sm btn-outline-info mt-2">
+                                <i class="fas fa-eye"></i> View Booking
+                              </a>';
                     } else {
-                        echo '<form method="POST" class="d-inline">
-                                <input type="hidden" name="class_id" value="' . $row["id"] . '">
-                                <input type="hidden" name="class_title" value="' . htmlspecialchars($row["title"]) . '">
-                                <input type="hidden" name="class_date" value="' . $startDateTime->format('Y-m-d') . '">
-                                <input type="hidden" name="class_time" value="' . $startDateTime->format('H:i') . '">
-                                <button type="submit" name="book_class" class="btn book-btn btn-block">
-                                    <i class="fas fa-calendar-plus"></i> Book This Class
-                                </button>
-                              </form>';
+                        echo '<button type="button" class="btn book-btn btn-block" data-toggle="modal" data-target="#bookingModal" 
+                                data-class-id="' . $row["id"] . '"
+                                data-class-title="' . htmlspecialchars($row["title"]) . '"
+                                data-class-date="' . $startDateTime->format('Y-m-d') . '"
+                                data-class-time="' . $startDateTime->format('H:i') . '"
+                                data-trainer="' . htmlspecialchars($row["trainer"] ?? 'TBA') . '">
+                                <i class="fas fa-calendar-plus"></i> Book This Class
+                              </button>';
                     }
                 } else {
                     echo '<span class="text-muted">
@@ -421,8 +468,8 @@ $filterClass = isset($_GET['filter_class']) ? $_GET['filter_class'] : '';
                             // Get stats
                             $todayClasses = $conn->query("SELECT COUNT(*) as count FROM tbl_events WHERE DATE(start) = CURDATE() AND start >= NOW()")->fetch_assoc()['count'];
                             $upcomingClasses = $conn->query("SELECT COUNT(*) as count FROM tbl_events WHERE start > NOW()")->fetch_assoc()['count'];
-                            $myBookings = $conn->query("SELECT COUNT(*) as count FROM tbl_bookings WHERE member_email = '$mEmail'")->fetch_assoc()['count'];
-                            $todayBookings = $conn->query("SELECT COUNT(*) as count FROM tbl_bookings b JOIN tbl_events e ON b.class_id = e.id WHERE b.member_email = '$mEmail' AND DATE(e.start) = CURDATE()")->fetch_assoc()['count'];
+                            $myBookings = $conn->query("SELECT COUNT(*) as count FROM submitbookingt_tb WHERE member_email = '$mEmail'")->fetch_assoc()['count'];
+                            $todayBookings = $conn->query("SELECT COUNT(*) as count FROM submitbookingt_tb WHERE member_email = '$mEmail' AND member_date = CURDATE()")->fetch_assoc()['count'];
                             ?>
                             <div class="col-md-3">
                                 <div class="card bg-primary text-white">
@@ -468,73 +515,85 @@ $filterClass = isset($_GET['filter_class']) ? $_GET['filter_class'] : '';
     </div>
 </div>
 
-<!-- Class Details Modal -->
-<div class="modal fade" id="classModal" tabindex="-1" role="dialog">
+<!-- Booking Modal -->
+<div class="modal fade" id="bookingModal" tabindex="-1" role="dialog">
     <div class="modal-dialog" role="document">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="classModalTitle">Class Details</h5>
+                <h5 class="modal-title">Book Class</h5>
                 <button type="button" class="close text-white" data-dismiss="modal">
                     <span>&times;</span>
                 </button>
             </div>
-            <div class="modal-body" id="classModalBody">
-                <!-- Class details will be loaded here -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                <div id="classModalActions">
-                    <!-- Action buttons will be loaded here -->
+            <form method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="class_id" id="modal_class_id">
+                    <input type="hidden" name="class_title" id="modal_class_title">
+                    <input type="hidden" name="class_date" id="modal_class_date">
+                    <input type="hidden" name="class_time" id="modal_class_time">
+                    <input type="hidden" name="trainer" id="modal_trainer">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong><i class="fas fa-dumbbell"></i> Class:</strong><br><span id="display_class_title"></span></p>
+                            <p><strong><i class="fas fa-calendar"></i> Date:</strong><br><span id="display_class_date"></span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong><i class="fas fa-clock"></i> Time:</strong><br><span id="display_class_time"></span></p>
+                            <p><strong><i class="fas fa-user"></i> Trainer:</strong><br><span id="display_trainer"></span></p>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="subscription_months"><i class="fas fa-calendar-alt"></i> Subscription Duration:</label>
+                        <select class="form-control" name="subscription_months" id="subscription_months" required>
+                            <option value="">Choose Duration</option>
+                            <option value="1">1 Month (30 days)</option>
+                            <option value="3">3 Months (90 days)</option>
+                            <option value="6">6 Months (180 days)</option>
+                            <option value="12">12 Months (365 days)</option>
+                        </select>
+                        <small class="form-text text-muted">This will create a subscription that includes access to this class type.</small>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>Note:</strong> Booking this class will create a subscription that allows you to attend similar classes during the selected period.
+                    </div>
                 </div>
-            </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" name="book_class" class="btn btn-success">
+                        <i class="fas fa-calendar-plus"></i> Confirm Booking
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
 <script>
-$(document).ready(function () {
-    var today = moment();
-    
-    var calendar = $('#calendar').fullCalendar({
-        header: {
-            left: 'prev,next today',
-            center: 'title',
-            right: 'month,agendaWeek,agendaDay'
-        },
-        defaultView: 'month',
-        editable: false,
-        selectable: false,
-        events: "fetch-user-events.php",
+$(document).ready(function() {
+    // Handle booking modal
+    $('#bookingModal').on('show.bs.modal', function (event) {
+        var button = $(event.relatedTarget);
+        var classId = button.data('class-id');
+        var classTitle = button.data('class-title');
+        var classDate = button.data('class-date');
+        var classTime = button.data('class-time');
+        var trainer = button.data('trainer');
         
-        eventRender: function (event, element, view) {
-            // Add custom styling based on event properties
-            if (event.color) {
-                element.css('background-color', event.color);
-                element.css('border-color', event.color);
-            }
-            
-            // Add tooltip with event details
-            element.attr('title', event.title + 
-                (event.trainer ? '\nTrainer: ' + event.trainer : '') +
-                (event.capacity ? '\nCapacity: ' + event.capacity : '') +
-                (event.is_booked ? '\n✓ Booked' : '\n○ Available'));
-            
-            // Style today's events differently
-            if (moment(event.start).isSame(today, 'day')) {
-                element.css('background-color', '#ffc107');
-                element.css('border-color', '#ffc107');
-            }
-            
-            // Style booked events
-            if (event.is_booked) {
-                element.css('background-color', '#17a2b8');
-                element.css('border-color', '#17a2b8');
-            }
-        },
+        var modal = $(this);
+        modal.find('#modal_class_id').val(classId);
+        modal.find('#modal_class_title').val(classTitle);
+        modal.find('#modal_class_date').val(classDate);
+        modal.find('#modal_class_time').val(classTime);
+        modal.find('#modal_trainer').val(trainer);
         
-        eventClick: function (event) {
-            showClassDetails(event);
-        }
+        modal.find('#display_class_title').text(classTitle);
+        modal.find('#display_class_date').text(new Date(classDate).toLocaleDateString());
+        modal.find('#display_class_time').text(classTime);
+        modal.find('#display_trainer').text(trainer);
     });
 
     // Auto-hide alerts after 5 seconds
@@ -543,70 +602,7 @@ $(document).ready(function () {
     }, 5000);
 });
 
-function showClassDetails(event) {
-    var startTime = moment(event.start).format('MMMM Do YYYY, h:mm A');
-    var endTime = moment(event.end).format('h:mm A');
-    var duration = moment(event.end).diff(moment(event.start), 'minutes');
-    var durationText = Math.floor(duration / 60) + ' hours ' + (duration % 60) + ' minutes';
-    
-    var status = '';
-    var statusClass = '';
-    var now = moment();
-    
-    if (now.isAfter(moment(event.end))) {
-        status = 'Completed';
-        statusClass = 'badge-secondary';
-    } else if (now.isBetween(moment(event.start), moment(event.end))) {
-        status = 'Ongoing';
-        statusClass = 'badge-success';
-    } else {
-        status = 'Upcoming';
-        statusClass = 'badge-primary';
-    }
-    
-    $('#classModalTitle').text(event.title);
-    $('#classModalBody').html(`
-        <div class="row">
-            <div class="col-md-6">
-                <p><strong><i class="fas fa-calendar"></i> Date:</strong><br>${startTime}</p>
-                <p><strong><i class="fas fa-clock"></i> Duration:</strong><br>${durationText}</p>
-                <p><strong><i class="fas fa-info-circle"></i> Status:</strong><br><span class="badge ${statusClass}">${status}</span></p>
-            </div>
-            <div class="col-md-6">
-                ${event.trainer ? `<p><strong><i class="fas fa-user"></i> Trainer:</strong><br>${event.trainer}</p>` : ''}
-                <p><strong><i class="fas fa-users"></i> Capacity:</strong><br>${event.capacity || 20} people</p>
-                ${event.is_booked ? '<p><strong><i class="fas fa-check"></i> Booking Status:</strong><br><span class="badge badge-info">Booked</span></p>' : ''}
-            </div>
-        </div>
-        ${event.description ? `<div class="mt-3"><strong>Description:</strong><br>${event.description}</div>` : ''}
-    `);
-    
-    var actions = '';
-    if (status === 'Upcoming' && !event.is_booked) {
-        actions = `<form method="POST" class="d-inline">
-                    <input type="hidden" name="class_id" value="${event.id}">
-                    <input type="hidden" name="class_title" value="${event.title}">
-                    <input type="hidden" name="class_date" value="${moment(event.start).format('YYYY-MM-DD')}">
-                    <input type="hidden" name="class_time" value="${moment(event.start).format('HH:mm')}">
-                    <button type="submit" name="book_class" class="btn btn-success">
-                        <i class="fas fa-calendar-plus"></i> Book This Class
-                    </button>
-                   </form>`;
-    } else if (event.is_booked) {
-        actions = '<span class="badge badge-info"><i class="fas fa-check"></i> Already Booked</span>';
-    }
-    
-    $('#classModalActions').html(actions);
-    $('#classModal').modal('show');
-}
-
-function viewTodayClasses() {
-    $('#calendar').fullCalendar('gotoDate', moment());
-    $('#calendar').fullCalendar('changeView', 'agendaDay');
-}
-
 function refreshCalendar() {
-    $('#calendar').fullCalendar('refetchEvents');
     location.reload();
 }
 </script>
@@ -614,6 +610,4 @@ function refreshCalendar() {
 </body>
 </html>
 
-<?php
-include('includes/footer.php'); 
-?>
+<?php include('includes/footer.php'); ?>

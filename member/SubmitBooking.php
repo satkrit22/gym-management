@@ -62,7 +62,7 @@ if (isset($_POST['Submitbooking'])) {
             if ($stmt->execute()) {
                 $genid = $conn->insert_id;
                 $_SESSION['myid'] = $genid;
-                echo "<script>alert('Booking Successful! Booking ID: $genid'); location.href='mybooking.php';</script>";
+                echo "<script>alert('Booking Successful! Booking ID: $genid'); location.href='memberProfile.php';</script>";
                 exit();
             } else {
                 $msg = '<div class="alert alert-danger col-sm-6 ml-5 mt-2" role="alert"> Unable to make booking: ' . $conn->error . '</div>';

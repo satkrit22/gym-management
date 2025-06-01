@@ -1,7 +1,7 @@
 <?php
 define('TITLE', 'Bookings');
 define('PAGE', 'bookings');
-include('includes/header.php'); 
+include('includes/header.php');
 include('../dbConnection.php');
 session_start();
 
@@ -13,32 +13,39 @@ if (!isset($_SESSION['is_adminlogin'])) {
 $aEmail = $_SESSION['aEmail'];
 
 // Handle payment status update
-if (isset($_POST['update_payment'])) {
+if (isset($_POST['booking_id'], $_POST['payment_status'])) {
     $booking_id = $_POST['booking_id'];
     $payment_status = $_POST['payment_status'];
-    
+
     $sql = "UPDATE submitbookingt_tb SET payment_status = ? WHERE Booking_id = ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("si", $payment_status, $booking_id);
-    
-    if ($stmt->execute()) {
-        $success_msg = "Payment status updated successfully!";
+
+    if ($stmt) {
+        $stmt->bind_param("si", $payment_status, $booking_id);
+        if ($stmt->execute()) {
+            $success_msg = "Payment status updated successfully!";
+        } else {
+            $error_msg = "Error updating payment status: " . $stmt->error;
+        }
     } else {
-        $error_msg = "Error updating payment status.";
+        $error_msg = "Prepare failed: " . $conn->error;
     }
 }
 
 // Handle booking deletion
-if (isset($_POST['delete'])) {
+if (isset($_POST['delete'], $_POST['id'])) {
     $id = $_POST['id'];
     $sql = "DELETE FROM submitbookingt_tb WHERE Booking_id = ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $id);
-    
-    if ($stmt->execute()) {
-        $success_msg = "Booking deleted successfully!";
+    if ($stmt) {
+        $stmt->bind_param("i", $id);
+        if ($stmt->execute()) {
+            $success_msg = "Booking deleted successfully!";
+        } else {
+            $error_msg = "Error deleting booking: " . $stmt->error;
+        }
     } else {
-        $error_msg = "Error deleting booking.";
+        $error_msg = "Prepare failed: " . $conn->error;
     }
 }
 
@@ -81,8 +88,7 @@ $filter_payment = $_GET['filter_payment'] ?? '';
                         <option value="pending" <?php echo ($filter_payment == 'pending') ? 'selected' : ''; ?>>Pending</option>
                         <option value="paid" <?php echo ($filter_payment == 'paid') ? 'selected' : ''; ?>>Paid</option>
                         <option value="failed" <?php echo ($filter_payment == 'failed') ? 'selected' : ''; ?>>Failed</option>
-                        <option value="refunded" <?php echo ($filter_payment == 'refunded') ? 'selected' : ''; ?>>Refunded</option>
-                    </select>
+                        </select>
                 </div>
                 <div class="col-md-4 d-flex align-items-end">
                     <button type="submit" class="btn btn-primary mr-2">Filter</button>
@@ -126,9 +132,8 @@ $filter_payment = $_GET['filter_payment'] ?? '';
     </div>
 
     <?php
-    // Build SQL query with filters
     $sql = "SELECT * FROM submitbookingt_tb WHERE 1=1";
-    $params = array();
+    $params = [];
     $types = "";
 
     if (!empty($filter_status)) {
@@ -152,7 +157,6 @@ $filter_payment = $_GET['filter_payment'] ?? '';
     }
 
     $sql .= " ORDER BY Booking_id DESC";
-
     $stmt = $conn->prepare($sql);
     if (!empty($params)) {
         $stmt->bind_param($types, ...$params);
@@ -176,63 +180,42 @@ $filter_payment = $_GET['filter_payment'] ?? '';
                 </tr>
             </thead>
             <tbody>';
-        
+
         while ($row = $result->fetch_assoc()) {
             $bookingDate = new DateTime($row["member_date"]);
             $today = new DateTime('today');
-            
-            // Determine booking status
-            $bookingStatus = '';
-            if ($bookingDate < $today) {
-                $bookingStatus = 'Completed';
-            } elseif ($bookingDate == $today) {
-                $bookingStatus = 'Today';
-            } else {
-                $bookingStatus = 'Upcoming';
-            }
-            
-            // Payment status badge
-            $paymentBadge = '';
+            $bookingStatus = ($bookingDate < $today) ? 'Completed' : (($bookingDate == $today) ? 'Today' : 'Upcoming');
+
             switch ($row['payment_status']) {
-                case 'paid':
-                    $paymentBadge = '<span class="badge badge-success">Paid</span>';
-                    break;
-                case 'pending':
-                    $paymentBadge = '<span class="badge badge-warning">Pending</span>';
-                    break;
-                case 'failed':
-                    $paymentBadge = '<span class="badge badge-danger">Failed</span>';
-                    break;
-                case 'refunded':
-                    $paymentBadge = '<span class="badge badge-info">Refunded</span>';
-                    break;
-                default:
-                    $paymentBadge = '<span class="badge badge-secondary">Unknown</span>';
+                case 'paid': $paymentBadge = '<span class="badge badge-success">Paid</span>'; break;
+                case 'pending': $paymentBadge = '<span class="badge badge-warning">Pending</span>'; break;
+                case 'failed': $paymentBadge = '<span class="badge badge-danger">Failed</span>'; break;
+                default: $paymentBadge = '<span class="badge badge-secondary">Unknown</span>';
             }
-            
-            echo '<tr>';
-            echo '<td><strong>#' . $row["Booking_id"] . '</strong></td>';
-            echo '<td>' . htmlspecialchars($row["member_name"]) . '</td>';
-            echo '<td>' . htmlspecialchars($row["member_email"]) . '</td>';
-            echo '<td><span class="badge badge-info">' . htmlspecialchars($row["booking_type"]) . '</span><br><small>' . $row["subscription_months"] . ' Month(s)</small></td>';
-            echo '<td>' . htmlspecialchars($row["member_mobile"]) . '</td>';
-            echo '<td>' . $bookingDate->format('Y-m-d') . '<br><small>' . $bookingStatus . '</small></td>';
-            echo '<td>' . $paymentBadge . '</td>';
-            echo '<td>
-                <button class="btn btn-sm btn-warning update-payment" 
-                        data-id="' . $row["Booking_id"] . '"
-                        data-status="' . $row["payment_status"] . '"
-                        data-toggle="modal" data-target="#paymentModal">
-                    <i class="fas fa-credit-card"></i>
-                </button>
-                <form method="POST" class="d-inline" onsubmit="return confirm(\'Are you sure you want to delete this booking?\')">
-                    <input type="hidden" name="id" value="' . $row["Booking_id"] . '">
-                    <button type="submit" class="btn btn-sm btn-danger" name="delete">
-                        <i class="far fa-trash-alt"></i>
-                    </button>
-                </form>
-            </td>';
-            echo '</tr>';
+
+            echo '<tr>
+                    <td><strong>#' . $row["Booking_id"] . '</strong></td>
+                    <td>' . htmlspecialchars($row["member_name"]) . '</td>
+                    <td>' . htmlspecialchars($row["member_email"]) . '</td>
+                    <td><span class="badge badge-info">' . htmlspecialchars($row["booking_type"]) . '</span><br><small>' . $row["subscription_months"] . ' Month(s)</small></td>
+                    <td>' . htmlspecialchars($row["member_mobile"]) . '</td>
+                    <td>' . $bookingDate->format('Y-m-d') . '<br><small>' . $bookingStatus . '</small></td>
+                    <td>' . $paymentBadge . '</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning update-payment"
+                            data-id="' . $row["Booking_id"] . '"
+                            data-status="' . $row["payment_status"] . '"
+                            data-toggle="modal" data-target="#paymentModal">
+                            <i class="fas fa-credit-card"></i>
+                        </button>
+                        <form method="POST" class="d-inline" onsubmit="return confirm(\'Are you sure you want to delete this booking?\')">
+                            <input type="hidden" name="id" value="' . $row["Booking_id"] . '">
+                            <button type="submit" class="btn btn-sm btn-danger" name="delete">
+                                <i class="far fa-trash-alt"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>';
         }
 
         echo '</tbody></table></div>';
@@ -242,7 +225,7 @@ $filter_payment = $_GET['filter_payment'] ?? '';
     ?>
 </div>
 
-<!-- Payment Status Modal -->
+<!-- Payment Modal -->
 <div class="modal fade" id="paymentModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -259,22 +242,25 @@ $filter_payment = $_GET['filter_payment'] ?? '';
                             <option value="pending">Pending</option>
                             <option value="paid">Paid</option>
                             <option value="failed">Failed</option>
-                            <option value="refunded">Refunded</option>
                         </select>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                    <button type="submit" name="update_payment" class="btn btn-primary">Update Status</button>
+                    <button type="submit" class="btn btn-primary">Update Status</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
+<!-- jQuery (Required for modal JS to work properly) -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- Modal JS -->
 <script>
-$(document).ready(function() {
-    $('.update-payment').click(function() {
+$(document).ready(function () {
+    $('.update-payment').click(function () {
         $('#payment_booking_id').val($(this).data('id'));
         $('#payment_status').val($(this).data('status'));
     });
