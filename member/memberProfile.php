@@ -133,6 +133,20 @@ if (isset($_POST['delete'])) {
 }
 ?>
 
+<style>
+/* Custom CSS for black table text */
+.table-dark-text {
+    color: #000 !important;
+}
+.table-dark-text th,
+.table-dark-text td {
+    color: #000 !important;
+}
+.table-dark-text .badge {
+    color: #fff !important;
+}
+</style>
+
 <div class="col-sm-9 col-md-10 mt-5">
     <!-- Navigation Tabs -->
     <ul class="nav nav-tabs" id="myTab" role="tablist">
@@ -162,100 +176,6 @@ if (isset($_POST['delete'])) {
                 <div class="alert alert-danger"><?php echo $error_msg; ?></div>
             <?php endif; ?>
 
-            <!-- Subscription Overview -->
-            <?php
-            $subscriptionSql = "SELECT *, 
-                                       DATEDIFF(subscription_end_date, CURDATE()) as days_remaining,
-                                       subscription_months,
-                                       CASE 
-                                           WHEN subscription_end_date < CURDATE() THEN 'expired'
-                                           WHEN DATEDIFF(subscription_end_date, CURDATE()) <= 7 THEN 'expiring_soon'
-                                           ELSE 'active'
-                                       END as subscription_status
-                                FROM submitbookingt_tb 
-                                WHERE member_email = ? 
-                                ORDER BY subscription_end_date DESC 
-                                LIMIT 1";
-            $subscriptionStmt = $conn->prepare($subscriptionSql);
-            $subscriptionStmt->bind_param("s", $mEmail);
-            $subscriptionStmt->execute();
-            $subscriptionResult = $subscriptionStmt->get_result();
-            
-            if ($subscriptionResult->num_rows > 0) {
-                $subscription = $subscriptionResult->fetch_assoc();
-                $statusClass = '';
-                $statusText = '';
-                $actionButton = '';
-                
-                // Calculate total days based on subscription_months
-                $totalDays = 0;
-                $subscriptionMonths = $subscription['subscription_months'] % 12;
-                if ($subscriptionMonths == 0 && $subscription['subscription_months'] > 0) {
-                    $subscriptionMonths = 12;
-                }
-                
-                switch ($subscriptionMonths) {
-                    case 1:
-                        $totalDays = 30;
-                        break;
-                    case 3:
-                        $totalDays = 90;
-                        break;
-                    case 6:
-                        $totalDays = 180;
-                        break;
-                    case 12:
-                        $totalDays = 365;
-                        break;
-                    default:
-                        $totalDays = $subscriptionMonths * 30;
-                }
-                
-                $daysRemaining = max(0, $subscription['days_remaining']);
-                $percentRemaining = ($totalDays > 0) ? round(($daysRemaining / $totalDays) * 100) : 0;
-                
-                switch ($subscription['subscription_status']) {
-                    case 'expired':
-                        $statusClass = 'alert-danger';
-                        $statusText = 'Your subscription has expired on ' . $subscription['subscription_end_date'];
-                        $actionButton = '<button class="btn btn-warning extend-subscription" data-id="' . $subscription['Booking_id'] . '" data-toggle="modal" data-target="#extendModal">Renew Subscription</button>';
-                        break;
-                    case 'expiring_soon':
-                        $statusClass = 'alert-warning';
-                        $statusText = 'Your subscription expires in ' . $daysRemaining . ' days (' . $subscription['subscription_end_date'] . ')';
-                        $actionButton = '<button class="btn btn-info extend-subscription" data-id="' . $subscription['Booking_id'] . '" data-toggle="modal" data-target="#extendModal">Extend Subscription</button>';
-                        break;
-                    case 'active':
-                        $statusClass = 'alert-success';
-                        $statusText = 'Your subscription is active until ' . $subscription['subscription_end_date'] . ' (' . $daysRemaining . ' days remaining)';
-                        $actionButton = '<button class="btn btn-outline-info extend-subscription" data-id="' . $subscription['Booking_id'] . '" data-toggle="modal" data-target="#extendModal">Extend Subscription</button>';
-                        break;
-                }
-                
-                echo '<div class="' . $statusClass . ' d-flex justify-content-between align-items-center p-3">
-                        <div>
-                            <h5 class="mb-1">Subscription Status</h5>
-                            <p class="mb-0">' . $statusText . '</p>';
-                
-                if ($subscription['subscription_status'] != 'expired') {
-                    echo '<div class="progress mt-2" style="height: 10px; width: 300px;">
-                            <div class="progress-bar ' . ($percentRemaining < 20 ? 'bg-danger' : 'bg-success') . '" 
-                                role="progressbar" 
-                                style="width: ' . $percentRemaining . '%;" 
-                                aria-valuenow="' . $percentRemaining . '" 
-                                aria-valuemin="0" 
-                                aria-valuemax="100">
-                                ' . $percentRemaining . '%
-                            </div>
-                          </div>';
-                }
-                
-                echo '</div>
-                        <div>' . $actionButton . '</div>
-                      </div>';
-            }
-            ?>
-
             <!-- Booking Statistics -->
             <div class="row mb-4">
                 <?php
@@ -271,7 +191,8 @@ if (isset($_POST['delete'])) {
 
                 $pastBookings = $totalCount - $upcomingCount;
                 
-                $activeSubscriptions = $conn->prepare("SELECT COUNT(*) as count FROM submitbookingt_tb WHERE member_email = ? AND subscription_end_date >= CURDATE()");
+                // Fixed active subscriptions query - check if subscription_end_date is greater than or equal to today
+                $activeSubscriptions = $conn->prepare("SELECT COUNT(*) as count FROM submitbookingt_tb WHERE member_email = ? AND subscription_end_date >= CURDATE() AND subscription_end_date IS NOT NULL");
                 $activeSubscriptions->bind_param("s", $mEmail);
                 $activeSubscriptions->execute();
                 $activeSubCount = $activeSubscriptions->get_result()->fetch_assoc()['count'];
@@ -346,7 +267,7 @@ if (isset($_POST['delete'])) {
             } elseif ($filter == 'past') {
                 $sql .= " AND member_date < CURDATE()";
             } elseif ($filter == 'active_subscription') {
-                $sql .= " AND subscription_end_date >= CURDATE()";
+                $sql .= " AND subscription_end_date >= CURDATE() AND subscription_end_date IS NOT NULL";
             }
             
             $sql .= " ORDER BY member_date DESC";
@@ -358,9 +279,9 @@ if (isset($_POST['delete'])) {
 
             if ($result->num_rows > 0) {
                 echo '<div class="table-responsive">
-                <table class="table table-bordered table-hover table-striped">
+                <table class="table table-bordered table-hover table-striped ">
                 <thead class="thead-dark">
-                    <tr>
+                    <tr style="color: white !important;">
                         <th>Booking ID</th>
                         <th>Name</th>
                         <th>Package/Class</th>
@@ -374,12 +295,17 @@ if (isset($_POST['delete'])) {
                         <th>Action</th>
                     </tr>
                 </thead>
-                <tbody>';
+                <tbody class="table-dark-text">';
 
                 while ($row = $result->fetch_assoc()) {
                     $bookingDate = new DateTime($row["member_date"]);
-                    $subscriptionEnd = new DateTime($row["subscription_end_date"]);
                     $today = new DateTime('today');
+                    
+                    // Fixed subscription end date handling
+                    $subscriptionEnd = null;
+                    if (!empty($row["subscription_end_date"]) && $row["subscription_end_date"] != '0000-00-00') {
+                        $subscriptionEnd = new DateTime($row["subscription_end_date"]);
+                    }
                     
                     $status = '';
                     $statusClass = '';
@@ -397,18 +323,28 @@ if (isset($_POST['delete'])) {
                         $canCancel = true;
                     }
                     
-                    // Subscription status
+                    // Fixed subscription status calculation
                     $subscriptionStatus = '';
                     $subscriptionClass = '';
                     $daysRemaining = 0;
+                    $subscriptionEndDisplay = 'N/A';
                     
-                    if ($subscriptionEnd >= $today) {
-                        $daysRemaining = $today->diff($subscriptionEnd)->days;
-                        $subscriptionStatus = 'Active (' . $daysRemaining . ' days)';
-                        $subscriptionClass = 'badge-success';
+                    if ($subscriptionEnd !== null) {
+                        $subscriptionEndDisplay = $subscriptionEnd->format('Y-m-d');
+                        
+                        if ($subscriptionEnd >= $today) {
+                            $interval = $today->diff($subscriptionEnd);
+                            $daysRemaining = $interval->days;
+                            $subscriptionStatus = 'Active (' . $daysRemaining . ' days left)';
+                            $subscriptionClass = 'badge-success';
+                        } else {
+                            $expiredDays = $today->diff($subscriptionEnd)->days;
+                            $subscriptionStatus = 'Expired (' . $expiredDays . ' days ago)';
+                            $subscriptionClass = 'badge-danger';
+                        }
                     } else {
-                        $subscriptionStatus = 'Expired';
-                        $subscriptionClass = 'badge-danger';
+                        $subscriptionStatus = 'No Subscription';
+                        $subscriptionClass = 'badge-secondary';
                     }
                     
                     // Payment status
@@ -445,7 +381,7 @@ if (isset($_POST['delete'])) {
                         <td>' . htmlspecialchars($row["trainer"]) . '</td>
                         <td>' . $bookingDate->format('Y-m-d') . '</td>
                         <td>' . htmlspecialchars($row["subscription_months"]) . ' Month(s)</td>
-                        <td>' . $subscriptionEnd->format('Y-m-d') . '<br><span class="badge ' . $subscriptionClass . '">' . $subscriptionStatus . '</span></td>
+                        <td>' . $subscriptionEndDisplay . '<br><span class="badge ' . $subscriptionClass . '">' . $subscriptionStatus . '</span></td>
                         <td>' . $paymentBadge . '</td>
                         <td><span class="badge ' . $statusClass . '">' . $status . '</span></td>
                         <td><span class="badge ' . ($isClassBooking ? 'badge-success' : 'badge-secondary') . '">' . ($isClassBooking ? 'Class Schedule' : 'Direct Booking') . '</span></td>
@@ -460,6 +396,13 @@ if (isset($_POST['delete'])) {
                               </form>';
                     } else {
                         echo '<span class="text-muted">Cannot Cancel</span>';
+                    }
+                    
+                    // Add extend subscription button for active subscriptions
+                    if ($subscriptionEnd !== null && $subscriptionEnd >= $today) {
+                        echo '<br><button type="button" class="btn btn-info btn-sm mt-1 extend-subscription" data-toggle="modal" data-target="#extendModal" data-id="' . $row["Booking_id"] . '">
+                                <i class="fas fa-plus"></i> Extend
+                              </button>';
                     }
 
                     echo '</td></tr>';
@@ -554,29 +497,29 @@ if (isset($_POST['delete'])) {
                     }
 
                     echo '<div class="col-md-6 col-lg-4 mb-4">
-                            <div class="card h-100 ' . $statusClass . '">
-                                <div class="card-header bg-light">
-                                    <h5 class="card-title mb-0">
-                                        <i class="fas fa-dumbbell text-primary"></i> ' . htmlspecialchars($classRow["class_title"]) . '
-                                    </h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-2">
-                                        <i class="fas fa-calendar text-muted"></i> 
-                                        <strong>' . $classDate->format('l, F j, Y') . '</strong>
-                                    </div>
-                                    <div class="mb-2">
-                                        <i class="fas fa-clock text-muted"></i> 
-                                        ' . date('h:i A', strtotime($classTime)) . '
-                                    </div>';
-                    
+                <div class="card h-100 ' . $statusClass . '">
+                    <div class="card-header bg-light" style="color: black;">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-dumbbell text-primary"></i> ' . htmlspecialchars($classRow["class_title"]) . '
+                        </h5>
+                    </div>
+                    <div class="card-body" style="color: black;">
+                        <div class="mb-2">
+                            <i class="fas fa-calendar text-muted"></i> 
+                            <strong>' . $classDate->format('l, F j, Y') . '</strong>
+                        </div>
+                        <div class="mb-2">
+                            <i class="fas fa-clock text-muted"></i> 
+                            ' . date('h:i A', strtotime($classTime)) . '
+                        </div>';
+
                     if (!empty($classRow["event_trainer"])) {
                         echo '<div class="mb-2">
                                 <i class="fas fa-user text-muted"></i> 
                                 Trainer: ' . htmlspecialchars($classRow["event_trainer"]) . '
                               </div>';
                     }
-                    
+
                     echo '<div class="mb-2">
                             <i class="fas fa-bookmark text-muted"></i> 
                             Booked on: ' . $bookingDate->format('M j, Y') . '
@@ -586,7 +529,7 @@ if (isset($_POST['delete'])) {
                             <span><strong>' . $statusText . '</strong></span>
                           </div>
                         </div>
-                        <div class="card-footer bg-white border-top-0 text-center">
+                        <div class="card-footer bg-white border-top-0 text-center" style="color: black;">
                             <span class="badge badge-info">
                                 <i class="fas fa-check"></i> Booked from Schedule
                             </span>
@@ -594,9 +537,9 @@ if (isset($_POST['delete'])) {
                     </div>
                   </div>';
                 }
-                echo '</div>';
+                echo '</div>'; // Close .row
             } else {
-                echo '<div class="alert alert-info text-center">
+                echo '<div class="alert alert-info text-center" style="color: black;">
                         <h4><i class="fas fa-info-circle"></i> No Class Bookings Found</h4>
                         <p>You haven\'t booked any classes from the schedule yet.</p>
                         <a href="viewschedule.php" class="btn btn-primary">
@@ -604,6 +547,7 @@ if (isset($_POST['delete'])) {
                         </a>
                       </div>';
             }
+
             $classStmt->close();
             ?>
         </div>
@@ -613,7 +557,7 @@ if (isset($_POST['delete'])) {
             <div class="row justify-content-center mt-4">
                 <div class="col-md-8">
                     <div class="card">
-                        <div class="card-header">
+                        <div class="card-header table-dark-text">
                             <h3 class="text-center mb-0">Update Profile Information</h3>
                         </div>
                         <div class="card-body">
