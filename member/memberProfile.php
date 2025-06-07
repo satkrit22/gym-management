@@ -36,66 +36,6 @@ if(isset($_REQUEST['nameupdate'])){
     }
 }
 
-// Handle subscription extension
-if (isset($_POST['extend_subscription'])) {
-    $booking_id = $_POST['booking_id'];
-    $extend_months = (int)$_POST['extend_months'];
-    
-    // Validate that extend_months is one of the allowed values
-    if (!in_array($extend_months, [1, 3, 6, 12])) {
-        $error_msg = "Invalid subscription period selected.";
-    } else {
-        // Get current subscription end date
-        $sql = "SELECT subscription_end_date FROM submitbookingt_tb WHERE Booking_id = ? AND member_email = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("is", $booking_id, $mEmail);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows > 0) {
-            $row = $result->fetch_assoc();
-            $currentEndDate = new DateTime($row['subscription_end_date']);
-            $today = new DateTime();
-            
-            // If subscription has expired, start from today, otherwise extend from current end date
-            $newStartDate = ($currentEndDate < $today) ? $today : $currentEndDate;
-            $newEndDate = clone $newStartDate;
-            
-            // Calculate days based on selected months
-            $newEndDate->add(new DateInterval('P' . $extend_months . 'M'));
-            
-            // Calculate days for display
-            $days_to_add = 0;
-            switch($extend_months) {
-                case 1:
-                    $days_to_add = 30;
-                    break;
-                case 3:
-                    $days_to_add = 90;
-                    break;
-                case 6:
-                    $days_to_add = 180;
-                    break;
-                case 12:
-                    $days_to_add = 365;
-                    break;
-            }
-            
-            // Update subscription end date
-            $updateSql = "UPDATE submitbookingt_tb SET subscription_end_date = ?, subscription_months = subscription_months + ? WHERE Booking_id = ? AND member_email = ?";
-            $updateStmt = $conn->prepare($updateSql);
-            $newEndDateStr = $newEndDate->format('Y-m-d');
-            $updateStmt->bind_param("siis", $newEndDateStr, $extend_months, $booking_id, $mEmail);
-            
-            if ($updateStmt->execute()) {
-                $success_msg = "Subscription extended successfully! New expiry date: " . $newEndDate->format('Y-m-d') . " (+" . $days_to_add . " days)";
-            } else {
-                $error_msg = "Error extending subscription.";
-            }
-        }
-    }
-}
-
 // Cancel Booking Logic
 if (isset($_POST['delete'])) {
     $bookingId = $_POST['id'];
@@ -134,7 +74,6 @@ if (isset($_POST['delete'])) {
 ?>
 
 <style>
-/* Custom CSS for black table text */
 .table-dark-text {
     color: #000 !important;
 }
@@ -168,10 +107,6 @@ if (isset($_POST['delete'])) {
                 <p class="bg-dark text-white p-2 mb-4">MY BOOKINGS & SUBSCRIPTIONS</p>
             </div>
 
-            <?php if (isset($success_msg)): ?>
-                <div class="alert alert-success"><?php echo $success_msg; ?></div>
-            <?php endif; ?>
-            
             <?php if (isset($error_msg)): ?>
                 <div class="alert alert-danger"><?php echo $error_msg; ?></div>
             <?php endif; ?>
@@ -191,13 +126,11 @@ if (isset($_POST['delete'])) {
 
                 $pastBookings = $totalCount - $upcomingCount;
                 
-                // Fixed active subscriptions query - check if subscription_end_date is greater than or equal to today
                 $activeSubscriptions = $conn->prepare("SELECT COUNT(*) as count FROM submitbookingt_tb WHERE member_email = ? AND subscription_end_date >= CURDATE() AND subscription_end_date IS NOT NULL");
                 $activeSubscriptions->bind_param("s", $mEmail);
                 $activeSubscriptions->execute();
                 $activeSubCount = $activeSubscriptions->get_result()->fetch_assoc()['count'];
                 
-                // Get class bookings count
                 $classBookings = $conn->prepare("SELECT COUNT(*) as count FROM tbl_bookings WHERE member_email = ?");
                 $classBookings->bind_param("s", $mEmail);
                 $classBookings->execute();
@@ -279,7 +212,7 @@ if (isset($_POST['delete'])) {
 
             if ($result->num_rows > 0) {
                 echo '<div class="table-responsive">
-                <table class="table table-bordered table-hover table-striped ">
+                <table class="table table-bordered table-hover table-striped">
                 <thead class="thead-dark">
                     <tr style="color: white !important;">
                         <th>Booking ID</th>
@@ -301,7 +234,6 @@ if (isset($_POST['delete'])) {
                     $bookingDate = new DateTime($row["member_date"]);
                     $today = new DateTime('today');
                     
-                    // Fixed subscription end date handling
                     $subscriptionEnd = null;
                     if (!empty($row["subscription_end_date"]) && $row["subscription_end_date"] != '0000-00-00') {
                         $subscriptionEnd = new DateTime($row["subscription_end_date"]);
@@ -323,10 +255,8 @@ if (isset($_POST['delete'])) {
                         $canCancel = true;
                     }
                     
-                    // Fixed subscription status calculation
                     $subscriptionStatus = '';
                     $subscriptionClass = '';
-                    $daysRemaining = 0;
                     $subscriptionEndDisplay = 'N/A';
                     
                     if ($subscriptionEnd !== null) {
@@ -347,7 +277,6 @@ if (isset($_POST['delete'])) {
                         $subscriptionClass = 'badge-secondary';
                     }
                     
-                    // Payment status
                     $paymentBadge = '';
                     switch ($row['payment_status']) {
                         case 'paid':
@@ -397,13 +326,6 @@ if (isset($_POST['delete'])) {
                     } else {
                         echo '<span class="text-muted">Cannot Cancel</span>';
                     }
-                    
-                    // Add extend subscription button for active subscriptions
-                    if ($subscriptionEnd !== null && $subscriptionEnd >= $today) {
-                        echo '<br><button type="button" class="btn btn-info btn-sm mt-1 extend-subscription" data-toggle="modal" data-target="#extendModal" data-id="' . $row["Booking_id"] . '">
-                                <i class="fas fa-plus"></i> Extend
-                              </button>';
-                    }
 
                     echo '</td></tr>';
                 }
@@ -426,7 +348,7 @@ if (isset($_POST['delete'])) {
                 echo '<div class="alert alert-info text-center">
                         <h4>No ' . ucfirst($filterText) . 'Bookings Found</h4>
                         <p>You don\'t have any ' . $filterText . 'bookings at the moment.</p>
-                        <a href="SubmitBooking.php" class="btn btn-primary">Make a New Booking</a>
+                        <a href="viewschedule.php" class="btn btn-primary">Book a Class</a>
                       </div>';
             }
 
@@ -435,11 +357,11 @@ if (isset($_POST['delete'])) {
 
             <!-- Quick Actions -->
             <div class="text-center mt-4">
-                <a href="SubmitBooking.php" class="btn btn-primary btn-lg">
-                    <i class="fas fa-plus"></i> Make New Booking
+                <a href="viewschedule.php" class="btn btn-primary btn-lg">
+                    <i class="fas fa-plus"></i> Book New Class
                 </a>
-                <a href="viewschedule.php" class="btn btn-info btn-lg ml-2">
-                    <i class="fas fa-calendar"></i> View Schedule
+                <a href="SubmitBooking.php" class="btn btn-info btn-lg ml-2">
+                    <i class="fas fa-calendar"></i> Direct Booking
                 </a>
             </div>
         </div>
@@ -451,7 +373,6 @@ if (isset($_POST['delete'])) {
             </div>
 
             <?php
-            // Get class bookings with event details
             $classBookingsSql = "SELECT cb.*, e.start, e.end, e.trainer as event_trainer, e.capacity,
                                         CASE 
                                             WHEN DATE(e.start) < CURDATE() THEN 'completed'
@@ -537,7 +458,7 @@ if (isset($_POST['delete'])) {
                     </div>
                   </div>';
                 }
-                echo '</div>'; // Close .row
+                echo '</div>';
             } else {
                 echo '<div class="alert alert-info text-center" style="color: black;">
                         <h4><i class="fas fa-info-circle"></i> No Class Bookings Found</h4>
@@ -586,61 +507,8 @@ if (isset($_POST['delete'])) {
     </div>
 </div>
 
-<!-- Extend Subscription Modal -->
-<div class="modal fade" id="extendModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Extend Subscription</h5>
-                <button type="button" class="close" data-dismiss="modal">&times;</button>
-            </div>
-            <form method="POST">
-                <div class="modal-body">
-                    <input type="hidden" name="booking_id" id="extend_booking_id">
-                    <div class="form-group">
-                        <label>Select Extension Period</label>
-                        <select class="form-control" name="extend_months" required id="extend_months">
-                            <option value="">Choose Duration</option>
-                            <option value="1">1 Month (30 days)</option>
-                            <option value="3">3 Months (90 days)</option>
-                            <option value="6">6 Months (180 days)</option>
-                            <option value="12">12 Months (365 days)</option>
-                        </select>
-                    </div>
-                    <div class="alert alert-info">
-                        <small>Your subscription will be extended from the current expiry date or today's date if already expired.</small>
-                    </div>
-                    <div id="subscription_preview" class="mt-3" style="display: none;">
-                        <h6>Subscription Preview:</h6>
-                        <div class="d-flex justify-content-between">
-                            <span>Duration:</span>
-                            <span id="preview_duration"></span>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <span>Days Added:</span>
-                            <span id="preview_days"></span>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <span>New Expiry Date:</span>
-                            <span id="preview_date"></span>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                    <button type="submit" name="extend_subscription" class="btn btn-primary">Extend Subscription</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
 <script>
 $(document).ready(function() {
-    $('.extend-subscription').click(function() {
-        $('#extend_booking_id').val($(this).data('id'));
-    });
-    
     // Handle tab switching with URL parameters
     if (window.location.hash) {
         $('.nav-tabs a[href="' + window.location.hash + '"]').tab('show');
@@ -649,47 +517,6 @@ $(document).ready(function() {
     // Update URL when tab is clicked
     $('.nav-tabs a').on('shown.bs.tab', function (e) {
         window.location.hash = e.target.hash;
-    });
-    
-    // Subscription extension preview
-    $('#extend_months').change(function() {
-        const months = $(this).val();
-        if (!months) {
-            $('#subscription_preview').hide();
-            return;
-        }
-        
-        let days = 0;
-        let durationText = '';
-        
-        switch(parseInt(months)) {
-            case 1:
-                days = 30;
-                durationText = '1 Month';
-                break;
-            case 3:
-                days = 90;
-                durationText = '3 Months';
-                break;
-            case 6:
-                days = 180;
-                durationText = '6 Months';
-                break;
-            case 12:
-                days = 365;
-                durationText = '12 Months (1 Year)';
-                break;
-        }
-        
-        // Calculate new expiry date
-        const today = new Date();
-        const expiryDate = new Date(today);
-        expiryDate.setDate(today.getDate() + days);
-        
-        $('#preview_duration').text(durationText);
-        $('#preview_days').text(days + ' days');
-        $('#preview_date').text(expiryDate.toLocaleDateString());
-        $('#subscription_preview').show();
     });
 });
 </script>

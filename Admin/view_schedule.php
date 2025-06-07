@@ -12,6 +12,21 @@ if (!isset($_SESSION['is_adminlogin'])) {
 
 $aEmail = $_SESSION['aEmail'];
 
+// Get trainers from database
+function getTrainers($conn) {
+    $trainers = array();
+    $sql = "SELECT DISTINCT trainer_name FROM trainers_tb WHERE status = 'active' ORDER BY trainer_name ASC";
+    $result = $conn->query($sql);
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $trainers[] = $row['trainer_name'];
+        }
+    }
+    return $trainers;
+}
+
+$trainers = getTrainers($conn);
+
 // Handle schedule actions
 if (isset($_POST['action'])) {
     $action = $_POST['action'];
@@ -111,6 +126,9 @@ $filter_class = $_GET['filter_class'] ?? '';
         </button>
         <a href="dashboard.php" class="btn btn-secondary ml-2">
             <i class="fas fa-tachometer-alt"></i> Dashboard
+        </a>
+        <a href="manage_trainers.php" class="btn btn-info ml-2">
+            <i class="fas fa-users"></i> Manage Trainers
         </a>
     </div>
 
@@ -362,18 +380,25 @@ $filter_class = $_GET['filter_class'] ?? '';
                     </div>
                     <div class="row">
                         <div class="col-md-6">
-                            <div class="col-md-6">
-                        <div class="form-group">
-                            <label for="inputTrainer">Select Trainer</label>
-                            <select class="form-control" id="inputTrainer" name="trainer" required>
-                                <option value="">Select</option>
-                                <option>Aashish Thapa </option>
-                                <option>Bikash Thapa</option>
-                                <option>Anupama</option>
-                                <option>Santoshi </option>
-                            </select>
-                        </div>
-                    </div>
+                            <div class="form-group">
+                                <label for="inputTrainer"><i class="fas fa-user"></i> Select Trainer</label>
+                                <select class="form-control" id="inputTrainer" name="trainer" required>
+                                    <option value="">Select Trainer</option>
+                                    <?php foreach ($trainers as $trainer): ?>
+                                        <option value="<?php echo htmlspecialchars($trainer); ?>">
+                                            <?php echo htmlspecialchars($trainer); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                    <?php if (empty($trainers)): ?>
+                                        <option value="" disabled>No trainers available</option>
+                                    <?php endif; ?>
+                                </select>
+                                <?php if (empty($trainers)): ?>
+                                    <small class="form-text text-muted">
+                                        <a href="manage_trainers.php">Add trainers</a> to assign them to classes.
+                                    </small>
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
@@ -470,7 +495,14 @@ $filter_class = $_GET['filter_class'] ?? '';
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-user"></i> Trainer</label>
-                                <input type="text" class="form-control" name="trainer" id="edit_trainer" placeholder="Trainer Name">
+                                <select class="form-control" name="trainer" id="edit_trainer">
+                                    <option value="">Select Trainer</option>
+                                    <?php foreach ($trainers as $trainer): ?>
+                                        <option value="<?php echo htmlspecialchars($trainer); ?>">
+                                            <?php echo htmlspecialchars($trainer); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                         </div>
                         <div class="col-md-6">

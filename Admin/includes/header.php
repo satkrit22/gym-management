@@ -58,6 +58,13 @@
         Schedules
        </a>
       </li>
+      <li class="nav-item">
+  <a class="nav-link <?php if(PAGE == 'trainer') echo 'active'; ?>" href="manage_trainer.php">
+    <i class="fas fa-dumbbell"></i>
+    Trainer
+  </a>
+</li>
+
       
       <li class="nav-item">
        <a class="nav-link <?php if(PAGE == 'contact') { echo 'active'; } ?> " href="contact us.php">

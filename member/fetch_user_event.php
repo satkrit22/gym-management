@@ -13,14 +13,15 @@ $mEmail = $_SESSION['mEmail'];
 
 try {
     $sql = "SELECT e.id, e.title, e.start, e.end, e.trainer, e.capacity, e.color, e.description,
-                   CASE WHEN b.id IS NOT NULL THEN 1 ELSE 0 END as is_booked
+                   CASE WHEN (b.id IS NOT NULL OR sb.Booking_id IS NOT NULL) THEN 1 ELSE 0 END as is_booked
             FROM tbl_events e 
             LEFT JOIN tbl_bookings b ON e.id = b.class_id AND b.member_email = ?
+            LEFT JOIN submitbookingt_tb sb ON e.title = sb.booking_type AND DATE(e.start) = sb.member_date AND sb.member_email = ?
             WHERE DATE(e.start) >= CURDATE()
             ORDER BY e.start";
     
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $mEmail);
+    $stmt->bind_param("ss", $mEmail, $mEmail);
     $stmt->execute();
     $result = $stmt->get_result();
 

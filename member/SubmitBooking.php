@@ -22,9 +22,29 @@ $stmt->bind_result($mName);
 $stmt->fetch();
 $stmt->close();
 
-// Pre-fill class/date if redirected from viewschedule
+// Pre-selected from schedule
 $preSelectedClass = isset($_GET['class']) ? $_GET['class'] : '';
 $preSelectedDate = isset($_GET['date']) ? $_GET['date'] : '';
+
+// Fetch trainers and their availability
+$sqlTrainers = "SELECT t.id, t.name, ta.day_of_week, ta.start_time, ta.end_time 
+                FROM trainers t
+                LEFT JOIN trainer_availability ta ON t.id = ta.trainer_id";
+$result = $conn->query($sqlTrainers);
+
+$trainerOptions = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $name = $row['name'];
+        $day = $row['day_of_week'];
+        $start = date("g:iA", strtotime($row['start_time']));
+        $end = date("g:iA", strtotime($row['end_time']));
+        $availability = "$day ($start - $end)";
+        $trainerOptions[$name]['name'] = $name;
+        $trainerOptions[$name]['availability'][] = $availability;
+    }
+    $result->free();
+}
 
 // Booking submission logic
 if (isset($_POST['Submitbooking'])) {
@@ -141,10 +161,11 @@ if (isset($_POST['Submitbooking'])) {
                             <label for="inputTrainer">Select Trainer</label>
                             <select class="form-control" id="inputTrainer" name="trainer" required>
                                 <option value="">Select</option>
-                                <option>Aashish Thapa (4:00AM-9:00AM)</option>
-                                <option>Bikash Thapa (9:00AM-4:00PM)</option>
-                                <option>Anupama (9:00AM-4:00PM)</option>
-                                <option>Santoshi (4:00AM-9:00AM)</option>
+                                <?php foreach ($trainerOptions as $trainer): ?>
+                                    <option value="<?php echo htmlspecialchars($trainer['name']); ?>">
+                                        <?php echo $trainer['name'] . ' - ' . implode(', ', $trainer['availability']); ?>
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                     </div>
@@ -192,7 +213,6 @@ function isInputNumber(evt) {
     }
 }
 
-// Set min date to today
 window.onload = function () {
     var today = new Date();
     var day = ("0" + today.getDate()).slice(-2);
