@@ -50,6 +50,9 @@ if (isset($_POST['action'])) {
             
             if ($stmt->execute()) {
                 $success_msg = "Trainer updated successfully!";
+                // Redirect to clear the GET parameter after successful update
+                echo "<script> location.href='manage_trainer.php'; </script>";
+                exit;
             } else {
                 $error_msg = "Error updating trainer: " . $conn->error;
             }
@@ -82,6 +85,26 @@ if (isset($_POST['action'])) {
             break;
     }
 }
+
+// Fetch trainer data if edit button is clicked
+$edit_trainer_id = isset($_GET['edit_trainer_id']) ? $_GET['edit_trainer_id'] : null;
+$trainer_data = null;
+$show_edit_modal = false;
+
+if ($edit_trainer_id) {
+    $sql = "SELECT * FROM trainers_tb WHERE id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $edit_trainer_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $trainer_data = $result->fetch_assoc();
+        $show_edit_modal = true;
+    } else {
+        echo "<div class='alert alert-danger'>Trainer not found!</div>";
+    }
+}
 ?>
 
 <div class="col-sm-9 col-md-10 mt-5">
@@ -91,14 +114,14 @@ if (isset($_POST['action'])) {
 
     <?php if (isset($success_msg)): ?>
         <div class="alert alert-success alert-dismissible fade show">
-            <?php echo $success_msg; ?>
+            <i class="fas fa-check-circle"></i> <?php echo $success_msg; ?>
             <button type="button" class="close" data-dismiss="alert">&times;</button>
         </div>
     <?php endif; ?>
     
     <?php if (isset($error_msg)): ?>
         <div class="alert alert-danger alert-dismissible fade show">
-            <?php echo $error_msg; ?>
+            <i class="fas fa-exclamation-circle"></i> <?php echo $error_msg; ?>
             <button type="button" class="close" data-dismiss="alert">&times;</button>
         </div>
     <?php endif; ?>
@@ -114,6 +137,12 @@ if (isset($_POST['action'])) {
         <a href="dashboard.php" class="btn btn-info ml-2">
             <i class="fas fa-tachometer-alt"></i> Dashboard
         </a>
+    </div>
+
+    <!-- Debug: Show current database connection status -->
+    <div class="alert alert-info">
+        Total Trainers: <?php echo $conn->query("SELECT COUNT(*) as count FROM trainers_tb")->fetch_assoc()['count']; ?> | 
+        Active Trainers: <?php echo $conn->query("SELECT COUNT(*) as count FROM trainers_tb WHERE status = 'active'")->fetch_assoc()['count']; ?>
     </div>
 
     <!-- Trainers Table -->
@@ -139,6 +168,7 @@ if (isset($_POST['action'])) {
                     <th>Experience</th>
                     <th>Hire Date</th>
                     <th>Status</th>
+                    <th>Assigned Classes</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -146,6 +176,13 @@ if (isset($_POST['action'])) {
 
         while ($row = $result->fetch_assoc()) {
             $statusClass = $row['status'] == 'active' ? 'badge-success' : 'badge-secondary';
+            
+            // Get assigned schedules count
+            $scheduleCountSql = "SELECT COUNT(*) as count FROM tbl_events WHERE trainer = ?";
+            $scheduleCountStmt = $conn->prepare($scheduleCountSql);
+            $scheduleCountStmt->bind_param("s", $row['trainer_name']);
+            $scheduleCountStmt->execute();
+            $scheduleCount = $scheduleCountStmt->get_result()->fetch_assoc()['count'];
             
             echo '<tr>';
             echo '<td>' . $row["id"] . '</td>';
@@ -156,28 +193,33 @@ if (isset($_POST['action'])) {
             echo '<td>' . ($row["experience_years"] ?? 0) . ' years</td>';
             echo '<td>' . ($row["hire_date"] ? date('Y-m-d', strtotime($row["hire_date"])) : 'N/A') . '</td>';
             echo '<td><span class="badge ' . $statusClass . '">' . ucfirst($row["status"]) . '</span></td>';
+            echo '<td>';
+            if ($scheduleCount > 0) {
+                echo '<span class="badge badge-info">' . $scheduleCount . ' classes</span>';
+            } else {
+                echo '<span class="badge badge-light">No classes</span>';
+            }
+            echo '</td>';
             echo '<td>
-                <button class="btn btn-sm btn-warning edit-trainer" 
-                        data-id="' . $row["id"] . '"
-                        data-name="' . htmlspecialchars($row["trainer_name"]) . '"
-                        data-email="' . htmlspecialchars($row["email"] ?? '') . '"
-                        data-phone="' . htmlspecialchars($row["phone"] ?? '') . '"
-                        data-specialization="' . htmlspecialchars($row["specialization"] ?? '') . '"
-                        data-experience="' . ($row["experience_years"] ?? 0) . '"
-                        data-status="' . $row["status"] . '"
-                        data-hire-date="' . ($row["hire_date"] ?? '') . '"
-                        data-toggle="modal" data-target="#editTrainerModal"
-                        title="Edit Trainer">
+                <a href="manage_trainer.php?edit_trainer_id=' . $row["id"] . '" class="btn btn-sm btn-warning" title="Edit Trainer">
                     <i class="fas fa-edit"></i>
-                </button>
-                <form method="POST" class="d-inline" onsubmit="return confirm(\'Are you sure you want to delete this trainer?\')">
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="trainer_id" value="' . $row["id"] . '">
-                    <button type="submit" class="btn btn-sm btn-danger" title="Delete Trainer">
+                </a>';
+            
+            if ($scheduleCount > 0) {
+                echo '<button class="btn btn-sm btn-secondary ml-1" disabled title="Cannot delete - assigned to classes">
                         <i class="fas fa-trash"></i>
-                    </button>
-                </form>
-            </td>';
+                      </button>';
+            } else {
+                echo '<form method="POST" class="d-inline ml-1" onsubmit="return confirm(\'Are you sure you want to delete this trainer?\')">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="trainer_id" value="' . $row["id"] . '">
+                        <button type="submit" class="btn btn-sm btn-danger" title="Delete Trainer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                      </form>';
+            }
+            
+            echo '</td>';
             echo '</tr>';
         }
 
@@ -269,18 +311,19 @@ if (isset($_POST['action'])) {
             <form method="POST">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="edit">
-                    <input type="hidden" name="trainer_id" id="edit_trainer_id">
+                    <input type="hidden" name="trainer_id" value="<?php echo $trainer_data['id'] ?? ''; ?>">
+                    
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-user"></i> Trainer Name</label>
-                                <input type="text" class="form-control" name="trainer_name" id="edit_trainer_name" required>
+                                <input type="text" class="form-control" name="trainer_name" value="<?php echo htmlspecialchars($trainer_data['trainer_name'] ?? ''); ?>" required>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-envelope"></i> Email</label>
-                                <input type="email" class="form-control" name="email" id="edit_email">
+                                <input type="email" class="form-control" name="email" value="<?php echo htmlspecialchars($trainer_data['email'] ?? ''); ?>">
                             </div>
                         </div>
                     </div>
@@ -288,13 +331,13 @@ if (isset($_POST['action'])) {
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-phone"></i> Phone</label>
-                                <input type="text" class="form-control" name="phone" id="edit_phone">
+                                <input type="text" class="form-control" name="phone" value="<?php echo htmlspecialchars($trainer_data['phone'] ?? ''); ?>">
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-calendar"></i> Hire Date</label>
-                                <input type="date" class="form-control" name="hire_date" id="edit_hire_date">
+                                <input type="date" class="form-control" name="hire_date" value="<?php echo htmlspecialchars($trainer_data['hire_date'] ?? ''); ?>">
                             </div>
                         </div>
                     </div>
@@ -302,13 +345,13 @@ if (isset($_POST['action'])) {
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-dumbbell"></i> Specialization</label>
-                                <input type="text" class="form-control" name="specialization" id="edit_specialization">
+                                <input type="text" class="form-control" name="specialization" value="<?php echo htmlspecialchars($trainer_data['specialization'] ?? ''); ?>">
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-star"></i> Experience (Years)</label>
-                                <input type="number" class="form-control" name="experience_years" id="edit_experience" min="0" max="50">
+                                <input type="number" class="form-control" name="experience_years" min="0" max="50" value="<?php echo htmlspecialchars($trainer_data['experience_years'] ?? 0); ?>">
                             </div>
                         </div>
                     </div>
@@ -316,18 +359,18 @@ if (isset($_POST['action'])) {
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-toggle-on"></i> Status</label>
-                                <select class="form-control" name="status" id="edit_status">
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
+                                <select class="form-control" name="status">
+                                    <option value="active" <?php echo isset($trainer_data['status']) && $trainer_data['status'] == 'active' ? 'selected' : ''; ?>>Active</option>
+                                    <option value="inactive" <?php echo isset($trainer_data['status']) && $trainer_data['status'] == 'inactive' ? 'selected' : ''; ?>>Inactive</option>
                                 </select>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                        <i class="fas fa-times"></i> Close
-                    </button>
+                    <a href="manage_trainer.php" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
                     <button type="submit" class="btn btn-warning">
                         <i class="fas fa-save"></i> Update Trainer
                     </button>
@@ -337,24 +380,13 @@ if (isset($_POST['action'])) {
     </div>
 </div>
 
+<!-- JavaScript to automatically show edit modal -->
 <script>
-$(document).ready(function() {
-    // Edit trainer button click handler
-    $('.edit-trainer').click(function() {
-        $('#edit_trainer_id').val($(this).data('id'));
-        $('#edit_trainer_name').val($(this).data('name'));
-        $('#edit_email').val($(this).data('email'));
-        $('#edit_phone').val($(this).data('phone'));
-        $('#edit_specialization').val($(this).data('specialization'));
-        $('#edit_experience').val($(this).data('experience'));
-        $('#edit_status').val($(this).data('status'));
-        $('#edit_hire_date').val($(this).data('hire-date'));
-    });
-
-    // Auto-hide alerts after 5 seconds
-    setTimeout(function() {
-        $('.alert').fadeOut();
-    }, 5000);
+document.addEventListener('DOMContentLoaded', function() {
+    <?php if ($show_edit_modal): ?>
+        // Show the edit modal automatically when trainer data is loaded
+        $('#editTrainerModal').modal('show');
+    <?php endif; ?>
 });
 </script>
 
