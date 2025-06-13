@@ -13,20 +13,26 @@ if (!isset($_SESSION['is_adminlogin'])) {
 // Handle trainer actions
 if (isset($_POST['action'])) {
     $action = $_POST['action'];
-    
+
     switch ($action) {
         case 'add':
-            $trainer_name = $_POST['trainer_name'];
-            $email = $_POST['email'];
-            $phone = $_POST['phone'];
-            $specialization = $_POST['specialization'];
-            $experience_years = $_POST['experience_years'];
-            $hire_date = $_POST['hire_date'];
-            
-            $sql = "INSERT INTO trainers_tb (trainer_name, email, phone, specialization, experience_years, hire_date) VALUES (?, ?, ?, ?, ?, ?)";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("ssssiss", $trainer_name, $email, $phone, $specialization, $experience_years, $hire_date);
-            
+            $trainer_name = @$_POST['trainer_name'];
+$email = @$_POST['email'];
+$phone = @$_POST['phone'];
+$specialization = @$_POST['specialization'];
+$experience_years = @$_POST['experience_years'];
+$hire_date = @$_POST['hire_date'] ? $_POST['hire_date'] : NULL;
+
+            // If hire_date is empty, set it to NULL for the query
+            if (empty($hire_date)) {
+                $hire_date = NULL;  // Set hire_date to NULL if it's not provided
+                $stmt = $conn->prepare("INSERT INTO trainers_tb (trainer_name, email, phone, specialization, experience_years, hire_date) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("ssssss", $trainer_name, $email, $phone, $specialization, $experience_years, $hire_date);
+            } else {
+                $stmt = $conn->prepare("INSERT INTO trainers_tb (trainer_name, email, phone, specialization, experience_years, hire_date) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("sssssss", $trainer_name, $email, $phone, $specialization, $experience_years, $hire_date);
+            }
+
             if ($stmt->execute()) {
                 $success_msg = "Trainer added successfully!";
             } else {
@@ -241,7 +247,7 @@ if ($edit_trainer_id) {
                 <h5 class="modal-title"><i class="fas fa-plus"></i> Add New Trainer</h5>
                 <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
             </div>
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="add">
                     <div class="row">
@@ -254,7 +260,7 @@ if ($edit_trainer_id) {
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label><i class="fas fa-envelope"></i> Email</label>
-                                <input type="email" class="form-control" name="email">
+                                <input type="email" class="form-control" name="email" required>
                             </div>
                         </div>
                     </div>
@@ -267,24 +273,32 @@ if ($edit_trainer_id) {
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label><i class="fas fa-calendar"></i> Hire Date</label>
-                                <input type="date" class="form-control" name="hire_date">
+                                <label><i class="fas fa-calendar"></i> Date of Birth</label>
+                                <input type="date" class="form-control" name="dob">
                             </div>
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label><i class="fas fa-dumbbell"></i> Specialization</label>
-                                <input type="text" class="form-control" name="specialization" placeholder="e.g., Weight Training, Yoga">
+                                <label><i class="fas fa-genderless"></i> Gender</label>
+                                <select class="form-control" name="gender">
+                                    <option value="male">Male</option>
+                                    <option value="female">Female</option>
+                                    <option value="other">Other</option>
+                                </select>
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label><i class="fas fa-star"></i> Experience (Years)</label>
-                                <input type="number" class="form-control" name="experience_years" min="0" max="50" value="0">
+                                <label><i class="fas fa-home"></i> Address</label>
+                                <textarea class="form-control" name="address"></textarea>
                             </div>
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-image"></i> Profile Image</label>
+                        <input type="file" class="form-control" name="image">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -299,6 +313,7 @@ if ($edit_trainer_id) {
         </div>
     </div>
 </div>
+
 
 <!-- Edit Trainer Modal -->
 <div class="modal fade" id="editTrainerModal" tabindex="-1">
